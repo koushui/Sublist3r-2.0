@@ -56,10 +56,7 @@ class verify_nameservers(multiprocessing.Process):
         self.target = target
         #1 website in the world,  modify the following line when this status changes.
         #www.google.cn,  I'm looking at you ;)
-        self.most_popular_website = "www.google.com"
-        #We shouldn't need the backup_resolver, but we we can use them if need be.
-        #We must have a resolver,  and localhost can work in some environments.
-        self.backup_resolver = resolver.nameservers + ['127.0.0.1', '8.8.8.8', '8.8.4.4']
+        self.most_popular_website = "www.baidu.com"
         #Ideally a nameserver should respond in less than 1 sec.
         resolver.timeout = 1
         resolver.lifetime = 1
@@ -116,17 +113,16 @@ class verify_nameservers(multiprocessing.Process):
 
     def run(self):
         #Every user will get a different set of resovlers, this helps redistribute traffic.
-        random.shuffle(self.resolver_list)
-        if not self.verify(self.resolver_list):
-            #This should never happen,  inform the user.
-            sys.stderr.write('Warning: No nameservers found, trying fallback list.\n')
-            #Try and fix it for the user:
-            self.verify(self.backup_resolver)
-        #End of the resolvers list.
-        try:
-            self.resolver_q.put(False, timeout = 1)
-        except:
-            pass
+        while True:
+            random.shuffle(self.resolver_list)
+            if not self.verify(self.resolver_list):
+                #This should never happen,  inform the user.
+                print 'loop resolver_list'
+            #End of the resolvers list.
+            try:
+                self.resolver_q.put(False, timeout = 1)
+            except:
+                pass
 
     #Only add the nameserver to the queue if we can detect wildcards. 
     #Returns False on error.
@@ -179,7 +175,7 @@ class lookup(multiprocessing.Process):
     def __init__(self, in_q, out_q, resolver_q, domain, wildcards, spider_blacklist):
         multiprocessing.Process.__init__(self, target = self.run)
         signal_init()
-        self.required_nameservers = 16
+        self.required_nameservers = 5
         self.in_q = in_q
         self.out_q = out_q
         self.resolver_q = resolver_q        
@@ -404,12 +400,18 @@ def extract_subdomains(file_name):
     subs_sorted = sorted(subs.keys(), key = lambda x: subs[x], reverse = True)
     return subs_sorted
 
-def print_target(target, record_type = None, subdomains = "names.txt", resolve_list = "resolvers.txt", process_count = 16, output = False, json_output = False, found_subdomains=[],verbose=False):
+def print_target(target, record_type = None, subdomains = "names.txt", resolve_list = "resolvers.txt", process_count = 20, found_subdomains=[],verbose=False):
     subdomains_list = []
-    results_temp = []
-    run(target, record_type, subdomains, resolve_list, process_count)
-    for result in run(target, record_type, subdomains, resolve_list, process_count):
+    ip_domains = {}
+    run(target, record_type, subdomains, resolve_list, process_count,found_subdomains)
+    for result in run(target, record_type, subdomains, resolve_list, process_count,found_subdomains):
         (hostname, record_type, response) = result
+        for ip in response:
+            if ip not in ip_domains:
+                ip_domains[ip] = []
+            if hostname not in ip_domains[ip]:
+                ip_domains[ip].append(hostname)
+        print result
         if not record_type:
             result = hostname
         else:
@@ -419,13 +421,12 @@ def print_target(target, record_type = None, subdomains = "names.txt", resolve_l
                 print(result)
             subdomains_list.append(result)
 
-    return  set(subdomains_list)
+    return  set(subdomains_list),ip_domains
 
-def run(target, record_type = None, subdomains = "names.txt", resolve_list = "resolvers.txt", process_count = 16):
+def run(target, record_type = None, subdomains = "names.txt", resolve_list = "resolvers.txt", process_count = 20, found_subdomains=[]):
     subdomains = check_open(subdomains)
+    subdomains += found_subdomains
     resolve_list = check_open(resolve_list)
-    if (len(resolve_list) / 16) < process_count:
-        sys.stderr.write('Warning: Fewer than 16 resovlers per thread, consider adding more nameservers to resolvers.txt.\n')
     if os.name == 'nt':
         wildcards = {}
         spider_blacklist = {}
@@ -435,7 +436,7 @@ def run(target, record_type = None, subdomains = "names.txt", resolve_list = "re
     in_q = multiprocessing.Queue()
     out_q = multiprocessing.Queue()
     #have a buffer of at most two new nameservers that lookup processes can draw from.
-    resolve_q = multiprocessing.Queue(maxsize = 2)
+    resolve_q = multiprocessing.Queue(maxsize = 5)
 
     #Make a source of fast nameservers avaiable for other processes.
     verify_nameservers_proc = verify_nameservers(target, record_type, resolve_q, resolve_list, wildcards)
@@ -447,15 +448,7 @@ def run(target, record_type = None, subdomains = "names.txt", resolve_list = "re
     for s in subdomains:
         s = str(s).strip()
         if s:
-            if s.find(","):
-                #SubBrute should be forgiving, a comma will never be in a url
-                #but the user might try an use a CSV file as input.
-                s=s.split(",")[0]
-            if not s.endswith(target):
-                hostname = "%s.%s" % (s, target)
-            else:
-                #A user might feed an output list as a subdomain list.
-                hostname = s
+            hostname = "%s.%s" % (s, target)
             if hostname not in spider_blacklist:
                 spider_blacklist[hostname]=None
                 work = (hostname, record_type)
@@ -558,78 +551,20 @@ if __name__ == "__main__":
     else:
         #everything else:
         base_path = os.path.dirname(os.path.realpath(__file__))
-    parser = optparse.OptionParser("usage: %prog [options] target")
-    parser.add_option("-s", "--subs", dest = "subs", default = os.path.join(base_path, "names.txt"),
-              type = "string", help = "(optional) list of subdomains,  default = 'names.txt'")
-    parser.add_option("-r", "--resolvers", dest = "resolvers", default = os.path.join(base_path, "resolvers.txt"),
-              type = "string", help = "(optional) A list of DNS resolvers, if this list is empty it will OS's internal resolver default = 'resolvers.txt'")
-    parser.add_option("-t", "--targets_file", dest = "targets", default = "",
-              type = "string", help = "(optional) A file containing a newline delimited list of domains to brute force.")
-    parser.add_option("-o", "--output", dest = "output",  default = False, help = "(optional) Output to file (Greppable Format)")
-    parser.add_option("-j", "--json", dest="json", default = False, help="(optional) Output to file (JSON Format)")
-    parser.add_option("-a", "-A", action = 'store_true', dest = "ipv4", default = False,
-              help = "(optional) Print all IPv4 addresses for sub domains (default = off).")
-    parser.add_option("--type", dest = "type", default = False,
-              type = "string", help = "(optional) Print all reponses for an arbitrary DNS record type (CNAME, AAAA, TXT, SOA, MX...)")                  
-    parser.add_option("-c", "--process_count", dest = "process_count",
-              default = 16, type = "int",
-              help = "(optional) Number of lookup theads to run. default = 16")
-    parser.add_option("-f", "--filter_subs", dest = "filter", default = "",
-              type = "string", help = "(optional) A file containing unorganized domain names which will be filtered into a list of subdomains sorted by frequency.  This was used to build names.txt.")                 
-    parser.add_option("-v", "--verbose", action = 'store_true', dest = "verbose", default = False,
-              help = "(optional) Print debug information.")
-    (options, args) = parser.parse_args()
 
-    
-    verbose = options.verbose
-
-    if len(args) < 1 and options.filter == "" and options.targets == "":
-        parser.error("You must provie a target. Use -h for help.")
-
-    if options.filter != "":
-        #cleanup this file and print it out
-        for d in extract_subdomains(options.filter):
-            print(d)
-        sys.exit()
-
-    if options.targets != "":
-        targets = check_open(options.targets) #the domains
-    else:
-        targets = args #multiple arguments on the cli: ./subbrute.py google.com gmail.com yahoo.com    if (len(resolver_list) / 16) < options.process_count:
-
-    output = False
-    if options.output:
-        try:
-             output = open(options.output, "w")
-        except:
-            error("Failed writing to file:", options.output)
-
-    json_output = False
-    if options.json:
-        try:
-            json_output = open(options.json, "w")
-        except:
-            error("Failed writing to file:", options.json)
-
-    record_type = False
-    if options.ipv4:
-        record_type="A"
-    if options.type:
-        record_type = str(options.type).upper()
-
-    threads = []
-    for target in targets:
-        target = target.strip()
-        if target:
-
-            #target => domain
-            #record_type => 
-            #options.subs => file the contain the subdomains list
-            #options.process_count => process count default = 16
-            #options.resolvers => the resolvers file
-            #options.output
-            #options.json
-            print(target, record_type, options.subs, options.resolvers, options.process_count, output, json_output)
-            print_target(target, record_type, options.subs, options.resolvers, options.process_count, output, json_output)
+    #target => domain
+    #record_type =>
+    #options.subs => file the contain the subdomains list
+    #options.process_count => process count default = 16
+    #options.resolvers => the resolvers file
+    verbose = False
+    arg_set = {"target":"baidu.com",
+               "record_type":"A",
+               "subs":"names.txt",
+               "process_count":2,
+               "resolvers":"resolvers.txt"}
+    print arg_set
+    print_target(arg_set["target"], arg_set["record_type"], arg_set["subs"], arg_set["resolvers"], arg_set["process_count"])
+    print 'end'
 
 

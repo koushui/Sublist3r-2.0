@@ -13,7 +13,8 @@ import hashlib
 import random
 import multiprocessing
 import threading
-import socket
+import nmap
+import chardet,traceback
 from collections import Counter
 
 # external modules
@@ -56,8 +57,6 @@ if is_windows:
     except:
         print("[!] Error: Coloring libraries not installed ,no coloring will be used [Check the readme]")
         G = Y = B = R = W = G = Y = B = R = W = ''
-        
-
 else:
     G = '\033[92m'  # green
     Y = '\033[93m'  # yellow
@@ -69,13 +68,14 @@ else:
 def banner():
     print("""%s
                  ____        _     _ _     _   _____
-                / ___| _   _| |__ | (_)___| |_|___ / _ __
-                \___ \| | | | '_ \| | / __| __| |_ \| '__|
-                 ___) | |_| | |_) | | \__ \ |_ ___) | |
-                |____/ \__,_|_.__/|_|_|___/\__|____/|_|%s%s
+                / ___| _   _| |__ | (_)___| |_|___ / _ __     _
+                \___ \| | | | '_ \| | / __| __| |_ \| '__|  _| |_
+                 ___) | |_| | |_) | | \__ \ |_ ___) | |    |_2.0_|
+                |____/ \__,_|_.__/|_|_|___/\__|____/|_|      |_|%s%s
 
                 # Coded By Ahmed Aboul-Ela - @aboul3la
-    """ % (R, W, Y))
+                # Recoded By @00theway
+""" % (R, W, Y))
 
 
 def parser_error(errmsg):
@@ -98,40 +98,6 @@ def parse_args():
     parser.add_argument('-e', '--engines', help='Specify a comma-separated list of search engines')
     parser.add_argument('-o', '--output', help='Save the results to text file')
     return parser.parse_args()
-
-
-def write_file(filename, subdomains):
-    # saving subdomains results to output file
-    print("%s[-] Saving results to file: %s%s%s%s" % (Y, W, R, filename, W))
-    with open(str(filename), 'wt') as f:
-        for subdomain in subdomains:
-            f.write(subdomain + "\r\n")
-
-
-def subdomain_sorting_key(hostname):
-    """Sorting key for subdomains
-
-    This sorting key orders subdomains from the top-level domain at the right
-    reading left, then moving '^' and 'www' to the top of their group. For
-    example, the following list is sorted correctly:
-
-    [
-        'example.com',
-        'www.example.com',
-        'a.example.com',
-        'www.a.example.com',
-        'b.a.example.com',
-        'b.example.com',
-        'example.net',
-        'www.example.net',
-        'a.example.net',
-    ]
-
-    """
-    parts = hostname.split('.')[::-1]
-    if parts[-1] == 'www':
-        return parts[:-1], 1
-    return parts, 0
 
 
 class enumratorBase(object):
@@ -876,33 +842,72 @@ class PassiveDNS(enumratorBaseThreaded):
 
 
 class portscan():
-    def __init__(self, subdomains, ports):
-        self.subdomains = subdomains
+    def __init__(self, ips, ports):
+        self.ips = ips
         self.ports = ports
         self.threads = 20
         self.lock = threading.BoundedSemaphore(value=self.threads)
-
-    def port_scan(self, host, ports):
-        openports = []
-        self.lock.acquire()
-        for port in ports:
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(2)
-                result = s.connect_ex((host, int(port)))
-                if result == 0:
-                    openports.append(port)
-                s.close()
-            except Exception:
-                pass
-        self.lock.release()
-        if len(openports) > 0:
-            print("%s%s%s - %sFound open ports:%s %s%s%s" % (G, host, W, R, W, Y, ', '.join(openports), W))
+        self.tasks = []
 
     def run(self):
-        for subdomain in self.subdomains:
-            t = threading.Thread(target=self.port_scan, args=(subdomain, self.ports))
-            t.start()
+        for ip in self.ips:
+            t = threading.Thread(target=self.port_scan, args=(ip, self.ports))
+            self.tasks.append(t)
+        for task in self.tasks:
+            task.start()
+
+        for task in self.tasks:
+            task.join()
+
+    def port_scan(self, host, ports):
+        print 'start scan %s' % host
+        ip_ports[host] = {"port": [], "http": []}
+        self.lock.acquire()
+        try:
+            nm = nmap.PortScanner()
+            nm.scan(host, ports)
+            for ip in nm.all_hosts():
+                tcp_info = nm[ip]['tcp']
+                for port in tcp_info:
+                    port_info = tcp_info[port]
+                    state = port_info['state']
+                    if state == 'open':
+                        name = port_info['name']
+                        product = port_info['product']
+                        version = port_info['version']
+                        port_banner = "%d:%s %s %s" % (port,name,product,version)
+                        print ip,port_banner
+                        ip_ports[ip]['port'].append(port_banner)
+
+                        if name == 'http':
+                            for domain in [host] + self.ips[host]:
+                                try:
+                                    url = "http://%s:%s/" % (domain,port)
+                                    html = requests.get(url,timeout=10).content
+                                    charset = chardet.detect(html)['encoding']
+                                    try:
+                                        title = re.findall(r'<title>(.*?)</title>', html, re.IGNORECASE)[0]
+                                        if 'gb' in charset.lower():
+                                            title = title.decode('gbk')
+                                        else:
+                                            title = title.decode('utf-8')
+                                    except:
+                                        title = "not found"
+                                except:
+                                    pass
+                                w_banner = "%s:%d\t%s\t%s\t%s" % (domain,port,product,version,title)
+                                ip_ports[ip]["http"].append(w_banner)
+
+
+        except Exception, e:
+            print '[port scan]', traceback.print_exc()
+            pass
+        if len(ip_ports[host]["http"]) == 0:
+            for domain in [host] + self.ips[host]:
+                ip_ports[host]["http"].append(domain + '\n')
+        self.lock.release()
+        print 'end of scan:', host, ip_ports[host]
+
 
 
 def main(domain, threads, savefile, ports, silent, verbose, enable_bruteforce, engines):
@@ -946,8 +951,7 @@ def main(domain, threads, savefile, ports, silent, verbose, enable_bruteforce, e
                          'virustotal': Virustotal,
                          'threatcrowd': ThreatCrowd,
                          'ssl': CrtSearch,
-                         'passivedns': PassiveDNS
-                         }
+                         'passivedns': PassiveDNS}
 
     chosenEnums = []
 
@@ -955,8 +959,7 @@ def main(domain, threads, savefile, ports, silent, verbose, enable_bruteforce, e
         chosenEnums = [
             BaiduEnum, YahooEnum, GoogleEnum, BingEnum, AskEnum,
             NetcraftEnum, DNSdumpster, Virustotal, ThreatCrowd,
-            CrtSearch, PassiveDNS
-        ]
+            CrtSearch, PassiveDNS]
     else:
         engines = engines.split(',')
         for engine in engines:
@@ -982,32 +985,46 @@ def main(domain, threads, savefile, ports, silent, verbose, enable_bruteforce, e
         subs = os.path.join(path_to_file, 'subbrute', 'names.txt')
         resolvers = os.path.join(path_to_file, 'subbrute', 'resolvers.txt')
         process_count = threads
-        output = False
-        json_output = False
-        bruteforce_list = subbrute.print_target(parsed_domain.netloc, record_type, subs, resolvers, process_count, output, json_output, search_list, verbose)
+        global ip_domains,ip_ports
+        bruteforce_list,ip_domains = subbrute.print_target(parsed_domain.netloc, record_type, subs, resolvers, process_count, search_list, verbose)
 
     subdomains = search_list.union(bruteforce_list)
 
-    if subdomains:
-        subdomains = sorted(subdomains, key=subdomain_sorting_key)
 
-        if savefile:
-            write_file(savefile, subdomains)
+    if not silent:
+        print(Y + "[-] Total Unique Subdomains Found: %s" % len(subdomains) + W)
 
-        if not silent:
-            print(Y + "[-] Total Unique Subdomains Found: %s" % len(subdomains) + W)
+    if ports:
+        s_ports = ['21', '22', '23'
+            , '80-90'
+            , '443', '8443'
+            , '8080', '8000', '8081', '8089', '8088', '8090', '8880', '8888', '9090', '9875', '9200', '9300', '9999'
+            , '6379'  # redis
+            , '1433'  # sqlserver
+            , '3306'  # mysql
+            , '1521'  # oracle
+            , '4848'  # glassfish
+            , '7001'  # weblogic
+            , '8500'  # coldfusion
+            , '9060', '9043', '9080', '9043'  # websphere
+            ]
+        ports_set = ','.join(s_ports)
+        # ports_set = '1-1000,7000-10000'
+        pscan = portscan(ip_domains, ports_set)
+        pscan.run()
 
-        if ports:
-            if not silent:
-                print(G + "[-] Start port scan now for the following ports: %s%s" % (Y, ports) + W)
-            ports = ports.split(',')
-            pscan = portscan(subdomains, ports)
-            pscan.run()
+    if not savefile:
+        savefile = domain + '_domains.txt'
 
-        elif not silent:
-            for subdomain in subdomains:
-                print(G + subdomain + W)
-    return subdomains
+    output = open(savefile,'ab+')
+    for ip in ip_ports:
+        print ip, ip_ports[ip]
+        output.write(ip + ':\n')
+        output.write('\n'.join(ip_ports[ip]["port"]) + '\n')
+        output.write('\n'.join(ip_ports[ip]["http"]) + '\n')
+        output.write('========================================\n')
+
+    output.close()
 
 
 if __name__ == "__main__":
