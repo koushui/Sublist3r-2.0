@@ -1039,4 +1039,4 @@ if __name__ == "__main__":
     if verbose or verbose is None:
         verbose = True
     banner()
-    res = main(domain, threads, savefile, ports, silent=False, verbose=verbose, enable_bruteforce=enable_bruteforce, engines=engines)
+    res = main(domain, threads, savefile, ports, silent=False, verbose=verbose, enable_bruteforce=enable_bruteforce, engines=engines,domains_4 = )

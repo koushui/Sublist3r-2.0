@@ -400,11 +400,11 @@ def extract_subdomains(file_name):
     subs_sorted = sorted(subs.keys(), key = lambda x: subs[x], reverse = True)
     return subs_sorted
 
-def print_target(target, record_type = None, subdomains = "names.txt", resolve_list = "resolvers.txt", process_count = 20, found_subdomains=[],verbose=False):
+def print_target(target, record_type = None, subdomains = "names.txt", resolve_list = "resolvers.txt", process_count = 20, found_subdomains=[], verbose=False,domains_4 = False):
     subdomains_list = []
     ip_domains = {}
-    run(target, record_type, subdomains, resolve_list, process_count,found_subdomains)
-    for result in run(target, record_type, subdomains, resolve_list, process_count,found_subdomains):
+    run(target, record_type, subdomains, resolve_list, process_count,found_subdomains, brute_4 = domains_4)
+    for result in run(target, record_type, subdomains, resolve_list, process_count,found_subdomains ,brute_4 = domains_4):
         (hostname, record_type, response) = result
         for ip in response:
             if ip not in ip_domains:
@@ -421,11 +421,26 @@ def print_target(target, record_type = None, subdomains = "names.txt", resolve_l
                 print(result)
             subdomains_list.append(result)
 
-    return  set(subdomains_list),ip_domains
+    return set(subdomains_list),ip_domains
 
-def run(target, record_type = None, subdomains = "names.txt", resolve_list = "resolvers.txt", process_count = 20, found_subdomains=[]):
+
+def generate_4():
+    domains = []
+    strs = 'qwertyuiopasdfghjklzxcvbnm'
+    for i in strs:
+        for j in strs:
+            for x in strs:
+                for y in strs:
+                    domain = i+j+x+y
+                    domains.append(domain)
+    return domains
+
+
+def run(target, record_type = None, subdomains = "names.txt", resolve_list = "resolvers.txt", process_count = 20, found_subdomains=[],brute_4 = False):
     subdomains = check_open(subdomains)
     subdomains += found_subdomains
+    if brute_4:
+        subdomains += generate_4()
     resolve_list = check_open(resolve_list)
     if os.name == 'nt':
         wildcards = {}
