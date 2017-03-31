@@ -400,11 +400,11 @@ def extract_subdomains(file_name):
     subs_sorted = sorted(subs.keys(), key = lambda x: subs[x], reverse = True)
     return subs_sorted
 
-def print_target(target, record_type = None, subdomains = "names.txt", resolve_list = "resolvers.txt", process_count = 20, found_subdomains=[], verbose=False,domains_4 = False):
+def print_target(target, record_type = None, subdomains = "names.txt", resolve_list = "resolvers.txt", process_count = 20, found_subdomains=[], verbose=False,brute_4 = False):
     subdomains_list = []
     ip_domains = {}
-    run(target, record_type, subdomains, resolve_list, process_count,found_subdomains, brute_4 = domains_4)
-    for result in run(target, record_type, subdomains, resolve_list, process_count,found_subdomains ,brute_4 = domains_4):
+    run(target, record_type, subdomains, resolve_list, process_count,found_subdomains, brute_4 = brute_4)
+    for result in run(target, record_type, subdomains, resolve_list, process_count,found_subdomains ,brute_4 = brute_4):
         (hostname, record_type, response) = result
         for ip in response:
             if ip not in ip_domains:
