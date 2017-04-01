@@ -860,7 +860,7 @@ class portscan():
             task.join()
 
     def port_scan(self, host, ports):
-        print 'start scan %s' % host
+        print '[start port scan %s]' % host
         ip_ports[host] = {"port": [], "http": []}
         self.lock.acquire()
         try:
