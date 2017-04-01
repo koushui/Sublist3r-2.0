@@ -1,3 +1,5 @@
 argparse
 dnspython
 requests
+python-nmap
+chardet
