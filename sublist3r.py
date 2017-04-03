@@ -977,6 +977,8 @@ def main(domain, threads, savefile, ports, silent, verbose, enable_bruteforce, e
     for subdomain in subdomains:
         search_list.add(subdomain)
 
+    global ip_domains, ip_ports
+
     if enable_bruteforce:
         if not silent:
             print(G + "[-] Starting bruteforce module now using subbrute.." + W)
@@ -985,7 +987,7 @@ def main(domain, threads, savefile, ports, silent, verbose, enable_bruteforce, e
         subs = os.path.join(path_to_file, 'subbrute', 'names.txt')
         resolvers = os.path.join(path_to_file, 'subbrute', 'resolvers.txt')
         process_count = threads
-        global ip_domains,ip_ports
+
         bruteforce_list,ip_domains = subbrute.print_target(parsed_domain.netloc, record_type, subs, resolvers, process_count, search_list, verbose)
 
     subdomains = search_list.union(bruteforce_list)
@@ -1014,7 +1016,15 @@ def main(domain, threads, savefile, ports, silent, verbose, enable_bruteforce, e
         pscan.run()
 
     if not savefile:
-        savefile = domain + '_domains.txt'
+        savefile = domain + '_pinfo.txt'
+
+    domain_file = domain + '_domains.txt'
+    output_domain = open(domain_file,'a+')
+    for domains in subdomains:
+        output_domain.write(domains+'\n')
+    output_domain.close()
+
+
 
     output = open(savefile,'ab+')
     for ip in ip_ports:
