@@ -215,7 +215,7 @@ class lookup(multiprocessing.Process):
     def check(self, host, record_type = "A", retries = 0):
         trace("Checking:", host)
         cname_record = []
-        retries = 0        
+        retries = 0
         if len(self.resolver.nameservers) <= self.required_nameservers:
             #This process needs more nameservers,  lets see if we have one avaible
             self.resolver.nameservers += self.get_ns()
@@ -296,6 +296,8 @@ class lookup(multiprocessing.Process):
                 else:
                     trace("Problem processing host:", host)
                     #dnspython threw some strange exception...
+                    print e
+                    pass
                     raise e
 
     def run(self):
