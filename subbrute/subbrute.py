@@ -298,7 +298,7 @@ class lookup(multiprocessing.Process):
                     #dnspython threw some strange exception...
                     print e
                     pass
-                    raise e
+                    #raise e
 
     def run(self):
         #This process needs one resolver before it can start looking.
