@@ -296,8 +296,7 @@ class lookup(multiprocessing.Process):
                 else:
                     trace("Problem processing host:", host)
                     #dnspython threw some strange exception...
-                    print e
-                    pass
+                    return False
                     #raise e
 
     def run(self):

@@ -848,6 +848,7 @@ class portscan():
         self.threads = 20
         self.lock = threading.BoundedSemaphore(value=self.threads)
         self.tasks = []
+        global ip_ports
 
     def run(self):
         for ip in self.ips:
@@ -1016,9 +1017,9 @@ def main(domain, threads, savefile, ports, silent, verbose, enable_bruteforce, e
         pscan.run()
 
     if not savefile:
-        savefile = domain + '_pinfo.txt'
+        savefile = 'out.txt'
 
-    domain_file = domain + '_domains.txt'
+    domain_file = savefile[:-4] + '_domains.txt'
     output_domain = open(domain_file,'a+')
     for domains in subdomains:
         output_domain.write(domains+'\n')
