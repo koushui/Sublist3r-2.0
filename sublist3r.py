@@ -978,7 +978,7 @@ def main(domain, threads, savefile, ports, silent, verbose, enable_bruteforce, e
     for subdomain in subdomains:
         search_list.add(subdomain)
 
-    global ip_domains, ip_ports
+    global ip_domains
 
     if enable_bruteforce:
         if not silent:
@@ -997,6 +997,9 @@ def main(domain, threads, savefile, ports, silent, verbose, enable_bruteforce, e
     if not silent:
         print(Y + "[-] Total Unique Subdomains Found: %s" % len(subdomains) + W)
 
+
+
+    global ip_ports
     if ports:
         s_ports = ['21', '22', '23'
             , '80-90'
