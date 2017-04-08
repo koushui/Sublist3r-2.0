@@ -62,68 +62,77 @@ class resolvedomain():
 
 			
 class portscan():
-	def __init__(self, ips, ports):
-		self.ips = ips
-		self.ports = ports
-		self.threads = 20
-		self.lock = threading.BoundedSemaphore(value=self.threads)
-		self.tasks = []
+    def __init__(self, ips, ports, threads=20):
+        self.ips = ips
+        self.ports = ports
+        self.threads = threads
+        self.lock = threading.BoundedSemaphore(value=self.threads)
+        self.tasks = []
+        global ip_ports
 
-	def port_scan(self, host, ports):
-		print 'start scan %s' % host
-		ip_ports[host] = {"port":[],"http":[]}
-		self.lock.acquire()
-		try:
-			nm = nmap.PortScanner()
-			nm.scan(host,ports)
-			for port in nm[host]['tcp'].keys():
-				if nm[host]['tcp'][port]['state'] == 'open':
-					port_banner = '%d:%s %s\n' % (port,nm[host]['tcp'][port]['product'],nm[host]['tcp'][port]['version'])
-					ip_ports[host]["port"].append(port_banner)
-					title = 'not found'
-					if nm[host]['tcp'][port]['name'] == 'http':
-						for domain in [host] + self.ips[host]:
-							try:
-								html = requests.get("http://%s:%s" % (domain,port),timeout=10).content
-								charset = chardet.detect(html)['encoding']
-								try:
-									title = re.findall(r'<title>(.*?)</title>', html ,re.IGNORECASE)[0]
-									if 'gb' in charset.lower():
-										title = title.decode('gbk')
-									else:
-										title = title.decode('utf-8')
-								except:
-									title = 'not found'
-							except:
-								pass
-							banner = '%s\t%d:%s %s\t%s\n' % (domain,port,nm[host]['tcp'][port]['product'],nm[host]['tcp'][port]['version'],title)
-							ip_ports[host]["http"].append(banner)
-			if len(ip_ports[host]["http"]) == 0:
-				for domain in [host] + self.ips[host]:
-					ip_ports[host]["http"].append(domain + '\n')
-								
+    def run(self):
+        for ip in self.ips:
+            t = threading.Thread(target=self.port_scan, args=(ip, self.ports))
+            self.tasks.append(t)
+        for task in self.tasks:
+            task.start()
+
+        for task in self.tasks:
+            task.join()
+
+    def port_scan(self, host, ports):
+        print '[start port scan %s]' % host
+        ip_ports[host] = {"port": [], "http": []}
+        self.lock.acquire()
+        try:
+            nm = nmap.PortScanner()
+            nm.scan(host, ports)
+            for ip in nm.all_hosts():
+                tcp_info = nm[ip]['tcp']
+                for port in tcp_info:
+                    port_info = tcp_info[port]
+                    state = port_info['state']
+                    if state == 'open':
+                        name = port_info['name']
+                        product = port_info['product']
+                        version = port_info['version']
+                        port_banner = "%d:%s %s %s" % (port,name,product,version)
+                        print ip,port_banner
+                        ip_ports[ip]['port'].append(port_banner)
+
+                        if name == 'http':
+                            for domain in [host] + self.ips[host]:
+                                try:
+                                    url = "http://%s:%s/" % (domain,port)
+                                    html = requests.get(url,timeout=10).content
+                                    charset = chardet.detect(html)['encoding']
+                                    try:
+                                        title = re.findall(r'<title>(.*?)</title>', html, re.IGNORECASE)[0]
+                                        if 'gb' in charset.lower():
+                                            title = title.decode('gbk')
+                                        else:
+                                            title = title.decode('utf-8')
+                                    except:
+                                        title = "not found"
+                                except:
+                                    pass
+                                w_banner = "%s:%d\t%s\t%s\t%s" % (domain,port,product,version,title)
+                                ip_ports[ip]["http"].append(w_banner)
 
 
-		except Exception,e:
-			print '[port scan]',traceback.print_exc()
-			pass
-		self.lock.release()
-		print 'end of scan:',host,ip_ports[host]
-
-	def run(self):
-		for ip in self.ips:
-			t = threading.Thread(target=self.port_scan, args=(ip, self.ports))
-			self.tasks.append(t)
-		for task in self.tasks:
-			task.start()
-			
-		for task in self.tasks:
-			task.join()
+        except Exception, e:
+            print '[port scan]', traceback.print_exc()
+            pass
+        if len(ip_ports[host]["http"]) == 0:
+            for domain in [host] + self.ips[host]:
+                ip_ports[host]["http"].append(domain + '\n')
+        self.lock.release()
+        print 'end of scan:', host, ip_ports[host]
 			
 			
 def main():
-	fname = sys.argv[1]
-	#fname = 'huazhu.txt'
+	fname = sys.argv[1]#fname = 'huazhu.txt'
+	thread = sys.argv[2]
 	domains = open(fname).read().splitlines()
 
 	
@@ -145,12 +154,20 @@ def main():
 	]
 	ports_set = ','.join(ports)
 	#ports_set = '1-1000,7000-10000'
-	pscan = portscan(ip_domains, ports_set)
+	pscan = portscan(ip_domains, ports_set, thread)
 	pscan.run()
 
-	for ip in ip_domains:
-		print ip,ip_ports[ip],ip_domains[ip]
-		open('%s-portsinfo.txt' % (fname[:-4]),'ab+').write(ip+':\n' + ''.join(ip_ports[ip]["port"]) + ''.join(ip_ports[ip]["http"]) +'\n========================================\n')
+
+	output = open(fname[:-4] + '_ports.txt', 'ab+')
+	for ip in ip_ports:
+		print ip, ip_ports[ip]
+		output.write(ip + ':\n')
+		output.write('\n'.join(ip_ports[ip]["port"]) + '\n')
+		output.write('\n'.join(ip_ports[ip]["http"]) + '\n')
+		output.write('========================================\n')
+
+	output.close()
+
 
 if __name__=="__main__":
 	main()
