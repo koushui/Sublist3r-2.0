@@ -132,7 +132,7 @@ class portscan():
 			
 def main():
 	fname = sys.argv[1]#fname = 'huazhu.txt'
-	thread = sys.argv[2]
+	thread = int(sys.argv[2])
 	domains = open(fname).read().splitlines()
 
 	
